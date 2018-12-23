@@ -1,9 +1,9 @@
 package main
 
 import (
-	_ "github.com/lib/pq"
 	"database/sql"
 	"fmt"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 )
@@ -16,7 +16,7 @@ var sslmode = os.Getenv("SSLMODE")
 
 var dbInfo = fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s", host, port, user, dbname, sslmode)
 
-func getTelegramIds() ([]int, error) {
+func getUsers() (map[int]string, error) {
 	log.Println(dbInfo)
 	db, err := sql.Open("postgres", dbInfo)
 	if err != nil {
@@ -24,23 +24,24 @@ func getTelegramIds() ([]int, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("SELECT telegramid FROM users")
+	rows, err := db.Query("SELECT telegramid, nickname FROM users")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var id int
-	ids := make([]int, 0)
+	var nickName string
+	users := make(map[int]string)
 	for rows.Next() {
-		err := rows.Scan(&id)
+		err := rows.Scan(&id, &nickName)
 		if err != nil {
 			log.Fatal(err)
 		}
-		ids = append(ids, id)
+		users[id] = nickName
 	}
 	if err = rows.Err(); err != nil {
 		log.Fatal(err)
 	}
 
-	return ids, err
+	return users, err
 }

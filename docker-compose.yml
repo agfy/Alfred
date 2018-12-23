@@ -8,11 +8,11 @@ services:
     ports:
       - 8080:80
     environment:
-      TOKEN: 709664111:AAE5uizTka6Q4IY2IWEwVWzwZmgxDlBeQaM
+      TOKEN: TOKEN
       HOST: alfred-db
       PORT: 5432
-      USER: postgres
-      DBNAME: postgres
+      USER: USER
+      DBNAME: DBNAME
       SSLMODE: disable
     command: ["./app"]  
 

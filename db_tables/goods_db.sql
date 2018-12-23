@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS goods (
     name TEXT, 
     class TEXT, 
     shop TEXT, 
-    volume INTEGER, 
+    volume TEXT, 
     price INTEGER,
     foodType TEXT
 );
