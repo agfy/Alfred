@@ -1,0 +1,25 @@
+version: "3"
+
+services:
+  alfred:
+    image: alfred
+    depends_on:
+      - alfred-db
+    ports:
+      - 8080:80
+    environment:
+      TOKEN: 709664111:AAE5uizTka6Q4IY2IWEwVWzwZmgxDlBeQaM
+      HOST: alfred-db
+      PORT: 5432
+      USER: postgres
+      DBNAME: postgres
+      SSLMODE: disable
+    command: ["./app"]  
+
+  alfred-db:
+    image: postgres:10-alpine
+    volumes:
+      - alfreddata:/var/lib/postgresql/data
+
+volumes:
+  alfreddata:
