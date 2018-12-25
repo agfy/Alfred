@@ -4,9 +4,10 @@ import (
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"log"
 	"os"
+	"strconv"
 )
 
-func Index(vs []string, t string) int {
+func index(vs []string, t string) int {
 	for i, v := range vs {
 		if v == t {
 			return i
@@ -15,8 +16,8 @@ func Index(vs []string, t string) int {
 	return -1
 }
 
-func Include(vs []string, t string) bool {
-	return Index(vs, t) >= 0
+func include(vs []string, t string) bool {
+	return index(vs, t) >= 0
 }
 
 type good struct {
@@ -45,32 +46,21 @@ type qualification struct {
 	Class    string `json:"class"`
 	Amount   string `json:"amount"`
 	OrderId  string `json:"order_id"`
+	GoodId   string `json:"good_id"`
 }
 
 var (
-	Requests = []string{
+	requests = []string{
 		"Сделать заказ",
 		"Забрать все заказы",
 		"Удалить заказ",
 		"Добавить товар",
 	}
 
-	shops = []string{
-		"Открывашка",
-		"Литра",
-		"Все равно",
-	}
-
-	foodTypes = []string{
-		"Напиток",
-		"Еда",
-	}
-
-	volumes = []string{
-		"0.5 л",
-		"1 л",
-		"1.5 л",
-	}
+	shops     = make([]string, 0)
+	foodTypes = make([]string, 0)
+	volumes   = make([]string, 0)
+	classes   = make([]string, 0)
 
 	amounts = []string{
 		"1 шт",
@@ -109,6 +99,111 @@ func createReplyMarkup(arr []string, chatId int64, messageId int) tgbotapi.EditM
 	return tgbotapi.NewEditMessageReplyMarkup(chatId, messageId, keyboard)
 }
 
+func (qual *qualification) clear() {
+	qual.Amount = ""
+	qual.Class = ""
+	qual.FoodType = ""
+	qual.OrderId = ""
+	qual.Request = ""
+	qual.Shop = ""
+	qual.Volume = ""
+}
+
+func askForShop(chatId int64, messageId int, bot *tgbotapi.BotAPI) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Укажите магазин")); err != nil {
+		log.Println(err)
+	}
+	if _, err := bot.Send(createReplyMarkup(shops, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func askForFoodType(chatId int64, messageId int, bot *tgbotapi.BotAPI) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Что вы желаете?")); err != nil {
+		log.Println(err)
+	}
+	if _, err := bot.Send(createReplyMarkup(foodTypes, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func askForVolume(chatId int64, messageId int, bot *tgbotapi.BotAPI) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Какой объем бутылки вы хотите?")); err != nil {
+		log.Println(err)
+	}
+	if _, err := bot.Send(createReplyMarkup(volumes, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func askForNumber(chatId int64, messageId int, bot *tgbotapi.BotAPI) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Сколько штук?")); err != nil {
+		log.Println(err)
+	}
+	if _, err := bot.Send(createReplyMarkup(amounts, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func askForClass(chatId int64, messageId int, bot *tgbotapi.BotAPI, shop, foodType string) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Что вы предпочитаете?")); err != nil {
+		log.Println(err)
+	}
+	footTypeClasses, _ := getClasses(shop, foodType)
+	if _, err := bot.Send(createReplyMarkup(footTypeClasses, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func askForGoods(chatId int64, messageId int, bot *tgbotapi.BotAPI, shop, foodType, class, volume string) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Что вы предпочитаете?")); err != nil {
+		log.Println(err)
+	}
+	gds, _ := getGoods(shop, foodType, class, volume)
+
+	keyboard := tgbotapi.InlineKeyboardMarkup{}
+
+	for _, gd := range gds {
+		var row []tgbotapi.InlineKeyboardButton
+		btn := tgbotapi.NewInlineKeyboardButtonData(gd.Name+" "+strconv.Itoa(gd.Price)+" руб", strconv.Itoa(gd.Id))
+		row = append(row, btn)
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+	}
+
+	if _, err := bot.Send(tgbotapi.NewEditMessageReplyMarkup(chatId, messageId, keyboard)); err != nil {
+		log.Println(err)
+	}
+}
+
+func processCreatingOrder(query string, chatId int64, messageId int, bot *tgbotapi.BotAPI, qualification *qualification) {
+	if include(requests, query) {
+		qualification.Request = query
+		askForShop(chatId, messageId, bot)
+	} else if include(shops, query) {
+		qualification.Shop = query
+		askForFoodType(chatId, messageId, bot)
+	} else if include(foodTypes, query) {
+		qualification.FoodType = query
+		askForClass(chatId, messageId, bot, qualification.Shop, qualification.FoodType)
+	} else if include(classes, query) {
+		qualification.Class = query
+		if qualification.FoodType == "напиток" {
+			askForVolume(chatId, messageId, bot)
+		} else {
+			askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
+		}
+	} else if include(volumes, query) {
+		qualification.Volume = query
+		askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
+	} else if _, err := strconv.Atoi(query); err == nil {
+		qualification.GoodId = query
+		askForNumber(chatId, messageId, bot)
+	} else if include(amounts, query) {
+		qualification.Amount = query
+
+	}
+}
+
 func main() {
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TOKEN"))
 	if err != nil {
@@ -124,27 +219,39 @@ func main() {
 	updates, err := bot.GetUpdatesChan(u)
 
 	users, err := getUsers()
-
-	for _, id := range users {
-		log.Println(id)
+	if err = fillValues(&shops, "shop"); err != nil {
+		log.Println(err)
 	}
-	//orders := make(map[int]order)
-	//goods := make(map[int]good)
+	if err = fillValues(&foodTypes, "foodtype"); err != nil {
+		log.Println(err)
+	}
+	if err = fillValues(&volumes, "volume"); err != nil {
+		log.Println(err)
+	}
+	if err = fillValues(&classes, "class"); err != nil {
+		log.Println(err)
+	}
+
+	userQualifications := make(map[int]*qualification)
+	for id := range users {
+		userQualifications[id] = &qualification{}
+	}
 
 	for update := range updates {
 		if update.Message != nil {
 			//log.Printf("[%s] [%s] %s", update.Message.From.UserName, update.Message.From.ID, update.Message.Text)
 			if _, ok := users[update.Message.From.ID]; !ok {
-				if _, err = bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Обратитесь к MaximGanker чтобы пользоваться ботом")); err != nil {
+				if _, err = bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Ваш telegramId:"+
+					strconv.Itoa(update.Message.From.ID)+" Обратитесь к MaximGanker чтобы пользоваться ботом")); err != nil {
 					log.Println(err)
 				}
 				continue
 			}
 
 			command := update.Message.Command()
-			log.Println(command)
 			if command == "start" {
-				if _, err = bot.Send(createMessage(Requests, update.Message.Chat.ID, "Чем я могу помочь?")); err != nil {
+				userQualifications[update.Message.From.ID].clear()
+				if _, err = bot.Send(createMessage(requests, update.Message.Chat.ID, "Чем я могу помочь?")); err != nil {
 					log.Println(err)
 				}
 			}
@@ -152,52 +259,20 @@ func main() {
 			query := update.CallbackQuery.Data
 			chatId := update.CallbackQuery.Message.Chat.ID
 			messageId := update.CallbackQuery.Message.MessageID
-			log.Println("query")
-			log.Println(query)
-			if query == Requests[0] {
-				if _, err = bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Какой магазин вы предпочитаете?")); err != nil {
-					log.Println(err)
+			userId := update.CallbackQuery.From.ID
+
+			if userQualifications[userId].Request == "" {
+				if !include(requests, query) {
+					log.Panic("userQualifications[userId].Request == \"\" and !include(requests, query)")
+					continue
 				}
 
-				if _, err = bot.Send(createReplyMarkup(shops, chatId, messageId)); err != nil {
-					log.Println(err)
-				}
-			} else if Include(shops, query) {
-				//goods[update.CallbackQuery.From.ID].Shop = query
-				if _, err = bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Что вы желаете?")); err != nil {
-					log.Println(err)
-				}
+				userQualifications[userId].Request = query
+			}
 
-				if _, err = bot.Send(createReplyMarkup(foodTypes, chatId, messageId)); err != nil {
-					log.Println(err)
-				}
-			} else if query == foodTypes[0] {
-				//goods[update.CallbackQuery.From.ID].Type = query
-				if _, err = bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Какой объем бутылки вы хотите?")); err != nil {
-					log.Println(err)
-				}
-
-				if _, err = bot.Send(createReplyMarkup(volumes, chatId, messageId)); err != nil {
-					log.Println(err)
-				}
-			} else if Include(volumes, query) || query == foodTypes[1] {
-				//goods[update.CallbackQuery.From.ID].Volume = query
-				if _, err = bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Сколько штук?")); err != nil {
-					log.Println(err)
-				}
-
-				if _, err = bot.Send(createReplyMarkup(amounts, chatId, messageId)); err != nil {
-					log.Println(err)
-				}
-			} else if Include(amounts, query) {
-				//goods[update.CallbackQuery.From.ID].Volume = query
-				if _, err = bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Ваш заказ сделан. Чем я могу еще помочь?")); err != nil {
-					log.Println(err)
-				}
-
-				if _, err = bot.Send(createReplyMarkup(Requests, chatId, messageId)); err != nil {
-					log.Println(err)
-				}
+			switch userQualifications[userId].Request {
+			case requests[0]:
+				processCreatingOrder(query, chatId, messageId, bot, userQualifications[userId])
 			}
 		} else {
 			log.Println("else")
