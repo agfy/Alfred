@@ -160,7 +160,6 @@ func askForGoods(chatId int64, messageId int, bot *tgbotapi.BotAPI, shop, foodTy
 		log.Println(err)
 	}
 	gds, _ := getGoods(shop, foodType, class, volume)
-
 	keyboard := tgbotapi.InlineKeyboardMarkup{}
 
 	for _, gd := range gds {
@@ -175,7 +174,16 @@ func askForGoods(chatId int64, messageId int, bot *tgbotapi.BotAPI, shop, foodTy
 	}
 }
 
-func processCreatingOrder(query string, chatId int64, messageId int, bot *tgbotapi.BotAPI, qualification *qualification) {
+func askForBasicFunctions(chatId int64, messageId int, bot *tgbotapi.BotAPI, message string) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, message)); err != nil {
+		log.Println(err)
+	}
+	if _, err := bot.Send(createReplyMarkup(requests, chatId, messageId)); err != nil {
+		log.Println(err)
+	}
+}
+
+func processCreatingOrder(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
 	if include(requests, query) {
 		qualification.Request = query
 		askForShop(chatId, messageId, bot)
@@ -200,7 +208,12 @@ func processCreatingOrder(query string, chatId int64, messageId int, bot *tgbota
 		askForNumber(chatId, messageId, bot)
 	} else if include(amounts, query) {
 		qualification.Amount = query
+		amount := index(amounts, qualification.Amount) + 1
+		goodId, _ := strconv.Atoi(qualification.GoodId)
+		err = createOrder(userId, amount, goodId)
 
+		qualification.clear()
+		askForBasicFunctions(chatId, messageId, bot, "Ваш заказ сделан. Чем я могу помочь?")
 	}
 }
 
@@ -241,7 +254,7 @@ func main() {
 		if update.Message != nil {
 			//log.Printf("[%s] [%s] %s", update.Message.From.UserName, update.Message.From.ID, update.Message.Text)
 			if _, ok := users[update.Message.From.ID]; !ok {
-				if _, err = bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Ваш telegramId:"+
+				if _, err = bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Ваш telegramId: "+
 					strconv.Itoa(update.Message.From.ID)+" Обратитесь к MaximGanker чтобы пользоваться ботом")); err != nil {
 					log.Println(err)
 				}
@@ -272,7 +285,7 @@ func main() {
 
 			switch userQualifications[userId].Request {
 			case requests[0]:
-				processCreatingOrder(query, chatId, messageId, bot, userQualifications[userId])
+				processCreatingOrder(query, chatId, messageId, userId, bot, userQualifications[userId])
 			}
 		} else {
 			log.Println("else")

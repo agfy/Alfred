@@ -6,6 +6,7 @@ import (
 	_ "github.com/lib/pq"
 	"log"
 	"os"
+	"strconv"
 )
 
 var host = os.Getenv("HOST")
@@ -52,6 +53,7 @@ func fillValues(arr *[]string, rawName string) error {
 	}
 	defer db.Close()
 
+	log.Println("fillValues " + rawName)
 	rows, err := db.Query("SELECT " + rawName + " FROM goods")
 	if err != nil {
 		log.Fatal(err)
@@ -63,7 +65,8 @@ func fillValues(arr *[]string, rawName string) error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if !include(*arr, raw) {
+		if !include(*arr, raw) && raw != "" {
+			log.Println(raw)
 			*arr = append(*arr, raw)
 		}
 	}
@@ -81,7 +84,8 @@ func getClasses(shop, foodType string) ([]string, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("SELECT class FROM goods WHERE shop='" + shop + "' AND foodtype='" + foodType + "'")
+	log.Println("getClasses " + foodType)
+	rows, err := db.Query("SELECT class FROM goods WHERE shop=$1 AND foodtype=$2", shop, foodType)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -94,6 +98,7 @@ func getClasses(shop, foodType string) ([]string, error) {
 			log.Fatal(err)
 		}
 		if !include(classes, class) {
+			log.Println(class)
 			classes = append(classes, class)
 		}
 	}
@@ -111,11 +116,8 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 	}
 	defer db.Close()
 
-	query := "SELECT id, name, price FROM goods WHERE shop='" + shop +
-		"' AND foodtype='" + foodType + "' AND class='" + class + "' AND volume='" + volume + "'"
-	println(query)
-	rows, err := db.Query("SELECT id, name, price FROM goods WHERE shop='" + shop +
-		"' AND foodtype='" + foodType + "' AND class='" + class + "' AND volume='" + volume + "'")
+	log.Println("getGoods ", shop, foodType, class, volume)
+	rows, err := db.Query("SELECT id, name, price FROM goods WHERE shop=$1 AND foodtype=$2 AND class=$3 AND volume=$4", shop, foodType, class, volume)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -128,6 +130,7 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Println(strconv.Itoa(gd.Id), gd.Name, strconv.Itoa(gd.Price))
 		gds = append(gds, gd)
 	}
 	if err = rows.Err(); err != nil {
@@ -135,4 +138,19 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 	}
 
 	return gds, err
+}
+
+func createOrder(ownerId, amount, goodId int) error {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO orders (owner_telegram_id, buyer_telegram_id, goods_id, amount, create_time) VALUES ($1, 0, $2, $3, now())", strconv.Itoa(ownerId), strconv.Itoa(goodId), strconv.Itoa(amount))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return err
 }
