@@ -21,39 +21,41 @@ func include(vs []string, t string) bool {
 }
 
 type good struct {
-	Id       int    `json:"id"`
-	Name     string `json:"name"`
-	Class    string `json:"class"`
-	Shop     string `json:"shop"`
-	Volume   int    `json:"volume"`
-	Price    int    `json:"price"`
-	FoodType string `json:"food_type"`
+	Id   int
+	Name string
+	//Class    string
+	//Shop     string
+	Volume string
+	Price  int
+	//FoodType string
 }
 
 type order struct {
-	Id         int    `json:"id"`
-	TelegramId int    `json:"telegram_id"`
-	GoodsId    int    `json:"goods_id"`
-	Amount     int    `json:"amount"`
-	CreateTime uint32 `json:"create_time"`
+	Id              int
+	OwnerTelegramId int
+	GoodId          int
+	Amount          int
+	//CreateTime uint32
 }
 
 type qualification struct {
-	Request  string `json:"request"`
-	Shop     string `json:"shop"`
-	FoodType string `json:"food_type"`
-	Volume   string `json:"volume"`
-	Class    string `json:"class"`
-	Amount   string `json:"amount"`
-	OrderId  string `json:"order_id"`
-	GoodId   string `json:"good_id"`
+	Request  string
+	Shop     string
+	FoodType string
+	Volume   string
+	Class    string
+	Amount   string
+	OrderIds []int
+	GoodId   string
 }
+
+const garageChatId = -1001245213385
 
 var (
 	requests = []string{
 		"Сделать заказ",
 		"Забрать все заказы",
-		"Удалить заказ",
+		"Изменить мой заказ",
 		"Добавить товар",
 	}
 
@@ -61,6 +63,7 @@ var (
 	foodTypes = make([]string, 0)
 	volumes   = make([]string, 0)
 	classes   = make([]string, 0)
+	users     = make(map[int]string)
 
 	amounts = []string{
 		"1 шт",
@@ -103,7 +106,7 @@ func (qual *qualification) clear() {
 	qual.Amount = ""
 	qual.Class = ""
 	qual.FoodType = ""
-	qual.OrderId = ""
+	qual.OrderIds = qual.OrderIds[:0]
 	qual.Request = ""
 	qual.Shop = ""
 	qual.Volume = ""
@@ -185,7 +188,6 @@ func askForBasicFunctions(chatId int64, messageId int, bot *tgbotapi.BotAPI, mes
 
 func processCreatingOrder(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
 	if include(requests, query) {
-		qualification.Request = query
 		askForShop(chatId, messageId, bot)
 	} else if include(shops, query) {
 		qualification.Shop = query
@@ -213,7 +215,97 @@ func processCreatingOrder(query string, chatId int64, messageId, userId int, bot
 		err = createOrder(userId, amount, goodId)
 
 		qualification.clear()
-		askForBasicFunctions(chatId, messageId, bot, "Ваш заказ сделан. Чем я могу помочь?")
+		askForBasicFunctions(chatId, messageId, bot, "Ваш заказ сделан, он будет доступен в течение 12 часов. Чем я могу еще помочь?")
+	}
+}
+
+func askOrdersToExclude(chatId int64, messageId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Нажмите на заказ если хотите искоючить его из списка")); err != nil {
+		log.Println(err)
+	}
+	orders, _ := getOrders()
+	keyboard := tgbotapi.InlineKeyboardMarkup{}
+
+	var row []tgbotapi.InlineKeyboardButton
+	btn := tgbotapi.NewInlineKeyboardButtonData("Готово", "Готово")
+	row = append(row, btn)
+	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+
+	for _, order := range orders {
+		*orderIds = append(*orderIds, order.Id)
+		gd, _ := getGood(order.GoodId)
+
+		var row []tgbotapi.InlineKeyboardButton
+		btn := tgbotapi.NewInlineKeyboardButtonData(gd.Name+" "+gd.Volume+" "+strconv.Itoa(order.Amount)+" шт", strconv.Itoa(order.Id))
+		row = append(row, btn)
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+	}
+
+	if _, err := bot.Send(tgbotapi.NewEditMessageReplyMarkup(chatId, messageId, keyboard)); err != nil {
+		log.Println(err)
+	}
+}
+
+func deleteOrder(orderId int, chatId int64, messageId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
+	for i, id := range *orderIds {
+		if id == orderId {
+			*orderIds = append((*orderIds)[:i], (*orderIds)[i+1:]...)
+		}
+	}
+
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Нажмите на заказ если хотите искоючить его из списка")); err != nil {
+		log.Println(err)
+	}
+	keyboard := tgbotapi.InlineKeyboardMarkup{}
+
+	var row []tgbotapi.InlineKeyboardButton
+	btn := tgbotapi.NewInlineKeyboardButtonData("Готово", "Готово")
+	row = append(row, btn)
+	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+
+	for _, orderId := range *orderIds {
+		order, _ := getOrder(orderId)
+		gd, _ := getGood(order.GoodId)
+
+		var row []tgbotapi.InlineKeyboardButton
+		btn := tgbotapi.NewInlineKeyboardButtonData(gd.Name+" "+gd.Volume+" "+strconv.Itoa(order.Amount)+" шт", strconv.Itoa(orderId))
+		row = append(row, btn)
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+	}
+
+	if _, err := bot.Send(tgbotapi.NewEditMessageReplyMarkup(chatId, messageId, keyboard)); err != nil {
+		log.Println(err)
+	}
+}
+
+func orderReady(chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
+	purchases := make(map[int]int)
+
+	for _, orderId := range *orderIds {
+		order, _ := getOrder(orderId)
+		gd, _ := getGood(order.GoodId)
+
+		purchases[order.OwnerTelegramId] += gd.Price * order.Amount
+	}
+
+	ordersMessage := users[userId] + " забрал все заказы: "
+	for id, value := range purchases {
+		ordersMessage += "@" + users[id] + " " + strconv.Itoa(value) + "руб, "
+	}
+
+	markOrdersBought(orderIds, userId)
+	bot.Send(tgbotapi.NewMessage(garageChatId, ordersMessage))
+	askForBasicFunctions(chatId, messageId, bot, "Чем я могу еще помочь?")
+}
+
+func processTakingOrders(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
+	if include(requests, query) {
+		askOrdersToExclude(chatId, messageId, bot, &qualification.OrderIds)
+	} else if orderId, err := strconv.Atoi(query); err == nil {
+		deleteOrder(orderId, chatId, messageId, bot, &qualification.OrderIds)
+	} else if query == "Готово" {
+		orderReady(chatId, messageId, userId, bot, &qualification.OrderIds)
+		qualification.clear()
 	}
 }
 
@@ -230,8 +322,8 @@ func main() {
 	u.Timeout = 60
 
 	updates, err := bot.GetUpdatesChan(u)
+	users, err = getUsers()
 
-	users, err := getUsers()
 	if err = fillValues(&shops, "shop"); err != nil {
 		log.Println(err)
 	}
@@ -247,7 +339,7 @@ func main() {
 
 	userQualifications := make(map[int]*qualification)
 	for id := range users {
-		userQualifications[id] = &qualification{}
+		userQualifications[id] = &qualification{OrderIds: make([]int, 0)}
 	}
 
 	for update := range updates {
@@ -263,6 +355,12 @@ func main() {
 
 			command := update.Message.Command()
 			if command == "start" {
+				if update.Message.Chat.ID == garageChatId {
+					bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Бот доступен только в приват режиме"))
+					continue
+				}
+
+				println(update.Message.Chat.ID)
 				userQualifications[update.Message.From.ID].clear()
 				if _, err = bot.Send(createMessage(requests, update.Message.Chat.ID, "Чем я могу помочь?")); err != nil {
 					log.Println(err)
@@ -286,14 +384,11 @@ func main() {
 			switch userQualifications[userId].Request {
 			case requests[0]:
 				processCreatingOrder(query, chatId, messageId, userId, bot, userQualifications[userId])
+			case requests[1]:
+				processTakingOrders(query, chatId, messageId, userId, bot, userQualifications[userId])
 			}
 		} else {
 			log.Println("else")
-			//log.Println(update.Message.Text)
-			//msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-			//msg.ReplyToMessageID = update.Message.MessageID
-
-			//bot.Send(msg)
 		}
 	}
 }

@@ -117,7 +117,8 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 	defer db.Close()
 
 	log.Println("getGoods ", shop, foodType, class, volume)
-	rows, err := db.Query("SELECT id, name, price FROM goods WHERE shop=$1 AND foodtype=$2 AND class=$3 AND volume=$4", shop, foodType, class, volume)
+	rows, err := db.Query("SELECT id, name, price FROM goods WHERE shop=$1 AND foodtype=$2 AND class=$3 "+
+		"AND volume=$4", shop, foodType, class, volume)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,7 +126,6 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 	gds := make([]good, 0)
 	var gd good
 	for rows.Next() {
-		println(gd.Name)
 		err := rows.Scan(&gd.Id, &gd.Name, &gd.Price)
 		if err != nil {
 			log.Fatal(err)
@@ -147,10 +147,106 @@ func createOrder(ownerId, amount, goodId int) error {
 	}
 	defer db.Close()
 
-	_, err = db.Exec("INSERT INTO orders (owner_telegram_id, buyer_telegram_id, goods_id, amount, create_time) VALUES ($1, 0, $2, $3, now())", strconv.Itoa(ownerId), strconv.Itoa(goodId), strconv.Itoa(amount))
+	_, err = db.Exec("INSERT INTO orders (owner_telegram_id, buyer_telegram_id, goods_id, amount, create_time) "+
+		"VALUES ($1, 0, $2, $3, now())", strconv.Itoa(ownerId), strconv.Itoa(goodId), strconv.Itoa(amount))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return err
+}
+
+func getOrders() ([]order, error) {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	log.Println("getOrders ")
+	rows, err := db.Query("SELECT id, owner_telegram_id, goods_id, amount FROM orders WHERE buyer_telegram_id = 0 AND " +
+		"create_time > now() - INTERVAL '12 hours'")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	orders := make([]order, 0)
+	var ordr order
+	for rows.Next() {
+		err := rows.Scan(&ordr.Id, &ordr.OwnerTelegramId, &ordr.GoodId, &ordr.Amount)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(strconv.Itoa(ordr.GoodId))
+		orders = append(orders, ordr)
+	}
+	if err = rows.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	return orders, err
+}
+
+func getGood(id int) (good, error) {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		return good{}, err
+	}
+	defer db.Close()
+
+	log.Println("getGood ")
+	rows, err := db.Query("SELECT name, volume, price FROM goods WHERE id = $1", id)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var gd good
+	if !rows.Next() {
+		return good{}, nil
+	}
+	err = rows.Scan(&gd.Name, &gd.Volume, &gd.Price)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return gd, err
+}
+
+func getOrder(id int) (order, error) {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		return order{}, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT owner_telegram_id, goods_id, amount FROM orders WHERE id = " + strconv.Itoa(id))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var ordr order
+	if !rows.Next() {
+		return order{}, nil
+	}
+	err = rows.Scan(&ordr.OwnerTelegramId, &ordr.GoodId, &ordr.Amount)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return ordr, err
+}
+
+func markOrdersBought(orders *[]int, buyerId int) {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	for _, orderId := range *orders {
+		_, err = db.Exec("UPDATE orders SET buyer_telegram_id = $1 WHERE id = $2", strconv.Itoa(buyerId), strconv.Itoa(orderId))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
