@@ -53,7 +53,6 @@ func fillValues(arr *[]string, rawName string) error {
 	}
 	defer db.Close()
 
-	log.Println("fillValues " + rawName)
 	rows, err := db.Query("SELECT " + rawName + " FROM goods")
 	if err != nil {
 		log.Fatal(err)
@@ -66,7 +65,6 @@ func fillValues(arr *[]string, rawName string) error {
 			log.Fatal(err)
 		}
 		if !include(*arr, raw) && raw != "" {
-			log.Println(raw)
 			*arr = append(*arr, raw)
 		}
 	}
@@ -84,7 +82,6 @@ func getClasses(shop, foodType string) ([]string, error) {
 	}
 	defer db.Close()
 
-	log.Println("getClasses " + foodType)
 	rows, err := db.Query("SELECT class FROM goods WHERE shop=$1 AND foodtype=$2", shop, foodType)
 	if err != nil {
 		log.Fatal(err)
@@ -98,7 +95,6 @@ func getClasses(shop, foodType string) ([]string, error) {
 			log.Fatal(err)
 		}
 		if !include(classes, class) {
-			log.Println(class)
 			classes = append(classes, class)
 		}
 	}
@@ -116,7 +112,6 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 	}
 	defer db.Close()
 
-	log.Println("getGoods ", shop, foodType, class, volume)
 	rows, err := db.Query("SELECT id, name, price FROM goods WHERE shop=$1 AND foodtype=$2 AND class=$3 "+
 		"AND volume=$4", shop, foodType, class, volume)
 	if err != nil {
@@ -130,7 +125,6 @@ func getGoods(shop, foodType, class, volume string) ([]good, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(strconv.Itoa(gd.Id), gd.Name, strconv.Itoa(gd.Price))
 		gds = append(gds, gd)
 	}
 	if err = rows.Err(); err != nil {
@@ -156,16 +150,19 @@ func createOrder(ownerId, amount, goodId int) error {
 	return err
 }
 
-func getOrders() ([]order, error) {
+func getOrders(userId int) ([]order, error) {
 	db, err := sql.Open("postgres", dbInfo)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	log.Println("getOrders ")
-	rows, err := db.Query("SELECT id, owner_telegram_id, goods_id, amount FROM orders WHERE buyer_telegram_id = 0 AND " +
-		"create_time > now() - INTERVAL '12 hours'")
+	query := "SELECT id, owner_telegram_id, goods_id, amount FROM orders WHERE buyer_telegram_id = 0 AND " +
+		"create_time > now() - INTERVAL '12 hours'"
+	if userId != 0 {
+		query += "AND owner_telegram_id = " + strconv.Itoa(userId)
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -177,7 +174,6 @@ func getOrders() ([]order, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(strconv.Itoa(ordr.GoodId))
 		orders = append(orders, ordr)
 	}
 	if err = rows.Err(); err != nil {
@@ -194,7 +190,6 @@ func getGood(id int) (good, error) {
 	}
 	defer db.Close()
 
-	log.Println("getGood ")
 	rows, err := db.Query("SELECT name, volume, price FROM goods WHERE id = $1", id)
 	if err != nil {
 		log.Fatal(err)
@@ -249,4 +244,18 @@ func markOrdersBought(orders *[]int, buyerId int) {
 			log.Fatal(err)
 		}
 	}
+}
+
+func deleteOrderfunc(id int) error {
+	db, err := sql.Open("postgres", dbInfo)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Query("DELETE FROM orders WHERE id = " + strconv.Itoa(id))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return err
 }

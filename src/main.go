@@ -56,7 +56,7 @@ var (
 		"Сделать заказ",
 		"Забрать все заказы",
 		"Изменить мой заказ",
-		"Добавить товар",
+		//"Добавить товар",
 	}
 
 	shops     = make([]string, 0)
@@ -186,44 +186,11 @@ func askForBasicFunctions(chatId int64, messageId int, bot *tgbotapi.BotAPI, mes
 	}
 }
 
-func processCreatingOrder(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
-	if include(requests, query) {
-		askForShop(chatId, messageId, bot)
-	} else if include(shops, query) {
-		qualification.Shop = query
-		askForFoodType(chatId, messageId, bot)
-	} else if include(foodTypes, query) {
-		qualification.FoodType = query
-		askForClass(chatId, messageId, bot, qualification.Shop, qualification.FoodType)
-	} else if include(classes, query) {
-		qualification.Class = query
-		if qualification.FoodType == "напиток" {
-			askForVolume(chatId, messageId, bot)
-		} else {
-			askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
-		}
-	} else if include(volumes, query) {
-		qualification.Volume = query
-		askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
-	} else if _, err := strconv.Atoi(query); err == nil {
-		qualification.GoodId = query
-		askForNumber(chatId, messageId, bot)
-	} else if include(amounts, query) {
-		qualification.Amount = query
-		amount := index(amounts, qualification.Amount) + 1
-		goodId, _ := strconv.Atoi(qualification.GoodId)
-		err = createOrder(userId, amount, goodId)
-
-		qualification.clear()
-		askForBasicFunctions(chatId, messageId, bot, "Ваш заказ сделан, он будет доступен в течение 12 часов. Чем я могу еще помочь?")
-	}
-}
-
-func askOrdersToExclude(chatId int64, messageId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
-	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Нажмите на заказ если хотите искоючить его из списка")); err != nil {
+func askOrdersToExclude(chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, orderIds *[]int, messageText string) {
+	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, messageText)); err != nil {
 		log.Println(err)
 	}
-	orders, _ := getOrders()
+	orders, _ := getOrders(userId)
 	keyboard := tgbotapi.InlineKeyboardMarkup{}
 
 	var row []tgbotapi.InlineKeyboardButton
@@ -246,11 +213,14 @@ func askOrdersToExclude(chatId int64, messageId int, bot *tgbotapi.BotAPI, order
 	}
 }
 
-func deleteOrder(orderId int, chatId int64, messageId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
+func deleteOrder(orderId int, chatId int64, messageId int, bot *tgbotapi.BotAPI, orderIds *[]int, permanently bool) {
 	for i, id := range *orderIds {
 		if id == orderId {
 			*orderIds = append((*orderIds)[:i], (*orderIds)[i+1:]...)
 		}
+	}
+	if permanently {
+		deleteOrderfunc(orderId)
 	}
 
 	if _, err := bot.Send(tgbotapi.NewEditMessageText(chatId, messageId, "Нажмите на заказ если хотите искоючить его из списка")); err != nil {
@@ -298,13 +268,59 @@ func orderReady(chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, order
 	askForBasicFunctions(chatId, messageId, bot, "Чем я могу еще помочь?")
 }
 
+func processCreatingOrder(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
+	if include(requests, query) {
+		askForShop(chatId, messageId, bot)
+	} else if include(shops, query) {
+		qualification.Shop = query
+		askForFoodType(chatId, messageId, bot)
+	} else if include(foodTypes, query) {
+		qualification.FoodType = query
+		askForClass(chatId, messageId, bot, qualification.Shop, qualification.FoodType)
+	} else if include(classes, query) {
+		qualification.Class = query
+		if qualification.FoodType == "напиток" {
+			askForVolume(chatId, messageId, bot)
+		} else {
+			askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
+		}
+	} else if include(volumes, query) {
+		qualification.Volume = query
+		askForGoods(chatId, messageId, bot, qualification.Shop, qualification.FoodType, qualification.Class, qualification.Volume)
+	} else if _, err := strconv.Atoi(query); err == nil {
+		qualification.GoodId = query
+		askForNumber(chatId, messageId, bot)
+	} else if include(amounts, query) {
+		qualification.Amount = query
+		amount := index(amounts, qualification.Amount) + 1
+		goodId, _ := strconv.Atoi(qualification.GoodId)
+		err = createOrder(userId, amount, goodId)
+
+		qualification.clear()
+		askForBasicFunctions(chatId, messageId, bot, "Ваш заказ сделан, он будет доступен в течение 12 часов. Чем я могу еще помочь?")
+	}
+}
+
 func processTakingOrders(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
 	if include(requests, query) {
-		askOrdersToExclude(chatId, messageId, bot, &qualification.OrderIds)
+		askOrdersToExclude(chatId, messageId, 0, bot, &qualification.OrderIds,
+			"Нажмите на заказ если хотите исключить его из списка")
 	} else if orderId, err := strconv.Atoi(query); err == nil {
-		deleteOrder(orderId, chatId, messageId, bot, &qualification.OrderIds)
+		deleteOrder(orderId, chatId, messageId, bot, &qualification.OrderIds, false)
 	} else if query == "Готово" {
 		orderReady(chatId, messageId, userId, bot, &qualification.OrderIds)
+		qualification.clear()
+	}
+}
+
+func processEditingOrders(query string, chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, qualification *qualification) {
+	if include(requests, query) {
+		askOrdersToExclude(chatId, messageId, userId, bot, &qualification.OrderIds,
+			"Нажмите на заказ если хотите удалить его")
+	} else if orderId, err := strconv.Atoi(query); err == nil {
+		deleteOrder(orderId, chatId, messageId, bot, &qualification.OrderIds, true)
+	} else if query == "Готово" {
+		askForBasicFunctions(chatId, messageId, bot, "Чем я могу еще помочь?")
 		qualification.clear()
 	}
 }
@@ -386,6 +402,8 @@ func main() {
 				processCreatingOrder(query, chatId, messageId, userId, bot, userQualifications[userId])
 			case requests[1]:
 				processTakingOrders(query, chatId, messageId, userId, bot, userQualifications[userId])
+			case requests[2]:
+				processEditingOrders(query, chatId, messageId, userId, bot, userQualifications[userId])
 			}
 		} else {
 			log.Println("else")
