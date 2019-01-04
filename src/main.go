@@ -249,22 +249,25 @@ func deleteOrder(orderId int, chatId int64, messageId int, bot *tgbotapi.BotAPI,
 }
 
 func orderReady(chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, orderIds *[]int) {
-	purchases := make(map[int]int)
+	if len(*orderIds) > 0 {
+		purchases := make(map[int]int)
 
-	for _, orderId := range *orderIds {
-		order, _ := getOrder(orderId)
-		gd, _ := getGood(order.GoodId)
+		for _, orderId := range *orderIds {
+			order, _ := getOrder(orderId)
+			gd, _ := getGood(order.GoodId)
 
-		purchases[order.OwnerTelegramId] += gd.Price * order.Amount
+			purchases[order.OwnerTelegramId] += gd.Price * order.Amount
+		}
+
+		ordersMessage := users[userId] + " забрал все заказы: "
+		for id, value := range purchases {
+			ordersMessage += "@" + users[id] + " " + strconv.Itoa(value) + "руб, "
+		}
+
+		markOrdersBought(orderIds, userId)
+		bot.Send(tgbotapi.NewMessage(garageChatId, ordersMessage))
 	}
 
-	ordersMessage := users[userId] + " забрал все заказы: "
-	for id, value := range purchases {
-		ordersMessage += "@" + users[id] + " " + strconv.Itoa(value) + "руб, "
-	}
-
-	markOrdersBought(orderIds, userId)
-	bot.Send(tgbotapi.NewMessage(garageChatId, ordersMessage))
 	askForBasicFunctions(chatId, messageId, bot, "Чем я могу еще помочь?")
 }
 
