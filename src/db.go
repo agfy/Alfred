@@ -231,19 +231,27 @@ func getOrder(id int) (order, error) {
 	return ordr, err
 }
 
-func markOrdersBought(orders *[]int, buyerId int) {
+func markOrdersBought(orders *[]int, buyerId int) []int {
 	db, err := sql.Open("postgres", dbInfo)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	affectedIds := make([]int, 0)
+
 	for _, orderId := range *orders {
-		_, err = db.Exec("UPDATE orders SET buyer_telegram_id = $1 WHERE id = $2", strconv.Itoa(buyerId), strconv.Itoa(orderId))
+		result, err := db.Exec("UPDATE orders SET buyer_telegram_id = $1 WHERE id = $2 AND buyer_telegram_id = 0", strconv.Itoa(buyerId), strconv.Itoa(orderId))
 		if err != nil {
 			log.Fatal(err)
 		}
+		rawsAffected, _ := result.RowsAffected()
+		if rawsAffected > 0 {
+			affectedIds = append(affectedIds, orderId)
+		}
 	}
+
+	return affectedIds
 }
 
 func deleteOrderfunc(id int) error {

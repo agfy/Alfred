@@ -252,19 +252,26 @@ func orderReady(chatId int64, messageId, userId int, bot *tgbotapi.BotAPI, order
 	if len(*orderIds) > 0 {
 		purchases := make(map[int]int)
 
-		for _, orderId := range *orderIds {
+		affectedIds := markOrdersBought(orderIds, userId)
+		if len(affectedIds) == 0 {
+			return
+		}
+
+		ordersMessage := "Список заказов:\n"
+		for _, orderId := range affectedIds {
 			order, _ := getOrder(orderId)
 			gd, _ := getGood(order.GoodId)
 
+			ordersMessage += users[order.OwnerTelegramId] + " " + gd.Name + " " + gd.Volume + " " +
+				strconv.Itoa(gd.Price) + "руб " + strconv.Itoa(order.Amount) + "шт\n"
 			purchases[order.OwnerTelegramId] += gd.Price * order.Amount
 		}
 
-		ordersMessage := users[userId] + " забрал все заказы: "
+		ordersMessage += users[userId] + " забрал все заказы: "
 		for id, value := range purchases {
 			ordersMessage += "@" + users[id] + " " + strconv.Itoa(value) + "руб, "
 		}
 
-		markOrdersBought(orderIds, userId)
 		bot.Send(tgbotapi.NewMessage(garageChatId, ordersMessage))
 	}
 
@@ -393,7 +400,10 @@ func main() {
 
 			if userQualifications[userId].Request == "" {
 				if !include(requests, query) {
-					log.Panic("userQualifications[userId].Request == \"\" and !include(requests, query)")
+					userQualifications[userId].clear()
+					if _, err = bot.Send(createMessage(requests, chatId, "Чем я могу помочь?")); err != nil {
+						log.Println(err)
+					}
 					continue
 				}
 
